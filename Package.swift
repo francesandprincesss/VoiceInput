@@ -14,6 +14,11 @@ let package = Package(
         .executableTarget(
             name: "VoiceInput",
             path: "Sources/VoiceInput"
+        ),
+        .testTarget(
+            name: "VoiceInputTests",
+            dependencies: ["VoiceInput"],
+            path: "Tests/VoiceInputTests"
         )
     ]
 )

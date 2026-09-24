@@ -3,19 +3,65 @@ import SwiftUI
 
 @MainActor
 final class AppState {
-    let settings = AppSettings()
-    let historyStore = HistoryStore()
-    let overlayController = OverlayController()
+    let settings: AppSettings
+    let historyStore: HistoryStore
+    let overlayController: OverlayController
+    let hotkeyManager: HotkeyManager
+    let permissionManager: PermissionManager
+    let dictationCoordinator: DictationCoordinator
 
     private var settingsWindowController: NSWindowController?
     private var historyWindowController: NSWindowController?
 
+    init() {
+        let settings = AppSettings()
+        let overlayController = OverlayController()
+        let hotkeyManager = HotkeyManager(shortcut: settings.hotkeyShortcut)
+        let permissionManager = PermissionManager()
+        let dictationCoordinator = DictationCoordinator(overlayController: overlayController)
+
+        self.settings = settings
+        historyStore = HistoryStore()
+        self.overlayController = overlayController
+        self.hotkeyManager = hotkeyManager
+        self.permissionManager = permissionManager
+        self.dictationCoordinator = dictationCoordinator
+
+        hotkeyManager.onEvent = { [weak settings, weak dictationCoordinator] event in
+            guard let settings, let dictationCoordinator else { return }
+            dictationCoordinator.handleHotkey(event, mode: settings.hotkeyMode)
+        }
+        permissionManager.onStatusChange = { [weak hotkeyManager] inputMonitoring, accessibility in
+            hotkeyManager?.updatePermissions(
+                inputMonitoring: inputMonitoring,
+                accessibility: accessibility
+            )
+        }
+        hotkeyManager.updatePermissions(
+            inputMonitoring: permissionManager.hasInputMonitoringPermission,
+            accessibility: permissionManager.hasAccessibilityPermission
+        )
+    }
+
+    func startHotkeyMonitoring() {
+        permissionManager.refresh()
+        hotkeyManager.updatePermissions(
+            inputMonitoring: permissionManager.hasInputMonitoringPermission,
+            accessibility: permissionManager.hasAccessibilityPermission
+        )
+    }
+
     func showSettings() {
         if settingsWindowController == nil {
-            let view = SettingsView(settings: settings)
+            let view = SettingsView(
+                settings: settings,
+                permissionManager: permissionManager,
+                hotkeyManager: hotkeyManager,
+                dictationCoordinator: dictationCoordinator
+            )
             settingsWindowController = makeWindowController(
                 title: "VoiceInput Settings",
-                size: NSSize(width: 420, height: 330),
+                size: NSSize(width: 520, height: 650),
                 rootView: view
             )
         }

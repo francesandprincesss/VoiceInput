@@ -21,6 +21,11 @@ final class AppSettings: ObservableObject {
     private enum Key {
         static let hotkeyMode = "hotkeyMode"
         static let language = "language"
+        static let hotkeyShortcut = "hotkeyShortcut"
+    }
+
+    private struct StoredShortcut: Codable {
+        let shortcut: HotkeyShortcut?
     }
 
     @Published var hotkeyMode: HotkeyMode {
@@ -29,6 +34,10 @@ final class AppSettings: ObservableObject {
 
     @Published var language: Language {
         didSet { defaults.set(language.rawValue, forKey: Key.language) }
+    }
+
+    @Published var hotkeyShortcut: HotkeyShortcut? {
+        didSet { persistHotkeyShortcut() }
     }
 
     private let defaults: UserDefaults
@@ -41,5 +50,17 @@ final class AppSettings: ObservableObject {
         language = Language(
             rawValue: defaults.string(forKey: Key.language) ?? ""
         ) ?? .automatic
+        if let data = defaults.data(forKey: Key.hotkeyShortcut),
+           let stored = try? JSONDecoder().decode(StoredShortcut.self, from: data) {
+            hotkeyShortcut = stored.shortcut
+        } else {
+            hotkeyShortcut = .defaultShortcut
+        }
+    }
+
+    private func persistHotkeyShortcut() {
+        let stored = StoredShortcut(shortcut: hotkeyShortcut)
+        guard let data = try? JSONEncoder().encode(stored) else { return }
+        defaults.set(data, forKey: Key.hotkeyShortcut)
     }
 }
