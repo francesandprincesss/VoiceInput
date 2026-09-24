@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 @MainActor
@@ -9,23 +10,54 @@ final class AppState {
     let hotkeyManager: HotkeyManager
     let permissionManager: PermissionManager
     let dictationCoordinator: DictationCoordinator
+    let speechModelManager: SpeechModelManager
+    let speechRecognizerRouter: SpeechRecognizerRouter
 
     private var settingsWindowController: NSWindowController?
     private var historyWindowController: NSWindowController?
+    private var cancellables: Set<AnyCancellable> = []
 
     init() {
         let settings = AppSettings()
-        let overlayController = OverlayController()
+        let audioLevelMonitor = AudioLevelMonitor()
+        let overlayController = OverlayController(audioLevelProvider: audioLevelMonitor)
         let hotkeyManager = HotkeyManager(shortcut: settings.hotkeyShortcut)
         let permissionManager = PermissionManager()
-        let dictationCoordinator = DictationCoordinator(overlayController: overlayController)
+        let historyStore = HistoryStore()
+        let speechModelManager = SpeechModelManager()
+        let speechRecognizerRouter = SpeechRecognizerRouter(
+            mode: settings.speechProcessingMode,
+            localRecognizer: speechModelManager,
+            apiRecognizer: APISpeechRecognizer()
+        )
+        let recorder = AudioRecorder(levelMonitor: audioLevelMonitor)
+        let dictationCoordinator = DictationCoordinator(
+            recorder: recorder,
+            speech: speechRecognizerRouter,
+            targetCapture: AccessibilityInsertionTargetCapture(),
+            textInserter: SystemTextInserter(),
+            history: historyStore,
+            presenter: overlayController,
+            language: { [weak settings] in
+                settings?.speechRecognitionLanguage ?? .automatic
+            }
+        )
 
         self.settings = settings
-        historyStore = HistoryStore()
+        self.historyStore = historyStore
         self.overlayController = overlayController
         self.hotkeyManager = hotkeyManager
         self.permissionManager = permissionManager
         self.dictationCoordinator = dictationCoordinator
+        self.speechModelManager = speechModelManager
+        self.speechRecognizerRouter = speechRecognizerRouter
+
+        settings.$speechProcessingMode
+            .dropFirst()
+            .sink { [weak speechRecognizerRouter] mode in
+                speechRecognizerRouter?.setMode(mode)
+            }
+            .store(in: &cancellables)
 
         hotkeyManager.onEvent = { [weak settings, weak dictationCoordinator] event in
             guard let settings, let dictationCoordinator else { return }
@@ -49,6 +81,7 @@ final class AppState {
             inputMonitoring: permissionManager.hasInputMonitoringPermission,
             accessibility: permissionManager.hasAccessibilityPermission
         )
+        speechRecognizerRouter.prepare()
     }
 
     func showSettings() {
@@ -57,11 +90,11 @@ final class AppState {
                 settings: settings,
                 permissionManager: permissionManager,
                 hotkeyManager: hotkeyManager,
-                dictationCoordinator: dictationCoordinator
+                speechModelManager: speechModelManager
             )
             settingsWindowController = makeWindowController(
                 title: "VoiceInput Settings",
-                size: NSSize(width: 520, height: 650),
+                size: NSSize(width: 540, height: 670),
                 rootView: view
             )
         }

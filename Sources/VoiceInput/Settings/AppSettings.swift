@@ -22,6 +22,7 @@ final class AppSettings: ObservableObject {
         static let hotkeyMode = "hotkeyMode"
         static let language = "language"
         static let hotkeyShortcut = "hotkeyShortcut"
+        static let speechProcessingMode = "speechProcessingMode"
     }
 
     private struct StoredShortcut: Codable {
@@ -40,7 +41,19 @@ final class AppSettings: ObservableObject {
         didSet { persistHotkeyShortcut() }
     }
 
+    @Published var speechProcessingMode: SpeechProcessingMode {
+        didSet { defaults.set(speechProcessingMode.rawValue, forKey: Key.speechProcessingMode) }
+    }
+
     private let defaults: UserDefaults
+
+    var speechRecognitionLanguage: SpeechRecognitionLanguage {
+        switch language {
+        case .automatic: .automatic
+        case .russian: .russian
+        case .english: .english
+        }
+    }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -50,6 +63,9 @@ final class AppSettings: ObservableObject {
         language = Language(
             rawValue: defaults.string(forKey: Key.language) ?? ""
         ) ?? .automatic
+        speechProcessingMode = SpeechProcessingMode(
+            rawValue: defaults.string(forKey: Key.speechProcessingMode) ?? ""
+        ) ?? .local
         if let data = defaults.data(forKey: Key.hotkeyShortcut),
            let stored = try? JSONDecoder().decode(StoredShortcut.self, from: data) {
             hotkeyShortcut = stored.shortcut

@@ -1,11 +1,13 @@
 import AppKit
 @preconcurrency import ApplicationServices
+@preconcurrency import AVFoundation
 import CoreGraphics
 
 @MainActor
 final class PermissionManager: NSObject, ObservableObject {
     @Published private(set) var hasInputMonitoringPermission = false
     @Published private(set) var hasAccessibilityPermission = false
+    @Published private(set) var hasMicrophonePermission = false
 
     var onStatusChange: ((_ inputMonitoring: Bool, _ accessibility: Bool) -> Void)?
 
@@ -26,11 +28,13 @@ final class PermissionManager: NSObject, ObservableObject {
     func refresh() {
         let inputMonitoring = CGPreflightListenEventAccess()
         let accessibility = AXIsProcessTrusted()
+        let microphone = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
         let changed = inputMonitoring != hasInputMonitoringPermission
             || accessibility != hasAccessibilityPermission
 
         hasInputMonitoringPermission = inputMonitoring
         hasAccessibilityPermission = accessibility
+        hasMicrophonePermission = microphone
 
         if changed {
             onStatusChange?(inputMonitoring, accessibility)
@@ -67,6 +71,14 @@ final class PermissionManager: NSObject, ObservableObject {
         return granted || hasAccessibilityPermission
     }
 
+    func requestMicrophone() {
+        Task { @MainActor [weak self] in
+            _ = await AVCaptureDevice.requestAccess(for: .audio)
+            self?.refresh()
+            self?.updatePollingState()
+        }
+    }
+
     func openInputMonitoringSettings() {
         openPrivacyPane("Privacy_ListenEvent")
     }
@@ -75,12 +87,18 @@ final class PermissionManager: NSObject, ObservableObject {
         openPrivacyPane("Privacy_Accessibility")
     }
 
+    func openMicrophoneSettings() {
+        openPrivacyPane("Privacy_Microphone")
+    }
+
     @objc private func applicationDidBecomeActive() {
         refresh()
     }
 
     private func updatePollingState() {
-        let isMissingPermission = !hasInputMonitoringPermission || !hasAccessibilityPermission
+        let isMissingPermission = !hasInputMonitoringPermission
+            || !hasAccessibilityPermission
+            || !hasMicrophonePermission
         if isMonitoringSettings && isMissingPermission {
             startPollingIfNeeded()
         } else {

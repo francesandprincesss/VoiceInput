@@ -35,3 +35,23 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## FluidAudio
+
+VoiceInput links FluidAudio 0.15.5 through Swift Package Manager. No FluidAudio
+source is copied into this repository.
+
+Copyright (c) FluidInference contributors. Licensed under the Apache License,
+Version 2.0. The license text and dependency notices are available in the
+upstream distribution:
+
+https://github.com/FluidInference/FluidAudio/tree/v0.15.5
+
+https://www.apache.org/licenses/LICENSE-2.0
+
+## NVIDIA Parakeet TDT 0.6B v3 / FluidAudio CoreML conversion
+
+The model is not bundled with VoiceInput. FluidAudio downloads the CoreML
+conversion from `FluidInference/parakeet-tdt-0.6b-v3-coreml` on first use.
+The upstream NVIDIA Parakeet TDT 0.6B v3 model is distributed under CC BY 4.0.
+Attribution and details are preserved in `MODEL_ATTRIBUTION.md`.

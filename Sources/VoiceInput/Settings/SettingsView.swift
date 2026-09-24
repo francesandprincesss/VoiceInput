@@ -4,7 +4,7 @@ struct SettingsView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var permissionManager: PermissionManager
     @ObservedObject var hotkeyManager: HotkeyManager
-    @ObservedObject var dictationCoordinator: DictationCoordinator
+    @ObservedObject var speechModelManager: SpeechModelManager
 
     var body: some View {
         Form {
@@ -66,44 +66,54 @@ struct SettingsView: View {
                     requestAction: { permissionManager.requestAccessibility() },
                     openSettingsAction: { permissionManager.openAccessibilitySettings() }
                 )
+
+                Divider()
+
+                permissionRow(
+                    title: "Microphone",
+                    granted: permissionManager.hasMicrophonePermission,
+                    requestAction: { permissionManager.requestMicrophone() },
+                    openSettingsAction: { permissionManager.openMicrophoneSettings() }
+                )
             }
 
-            Section("Debug / Diagnostics") {
-                diagnosticsRow(
-                    "Input Monitoring",
-                    permissionManager.hasInputMonitoringPermission ? "Granted" : "Missing"
-                )
-                diagnosticsRow(
-                    "Accessibility",
-                    permissionManager.hasAccessibilityPermission ? "Granted" : "Missing"
-                )
-                diagnosticsRow(
-                    "Event Tap",
-                    hotkeyManager.eventTapStatus.diagnosticText
-                )
-                diagnosticsRow(
-                    "Shortcut",
-                    hotkeyManager.shortcut?.displayName ?? "Not set"
-                )
-                diagnosticsRow(
-                    "Bound key down",
-                    hotkeyManager.boundKeyIsDown ? "true" : "false"
-                )
-                diagnosticsRow(
-                    "Dictation state",
-                    String(describing: dictationCoordinator.state)
-                )
+            Section("Speech Recognition") {
+                Toggle("Use API Transcription", isOn: apiModeBinding)
+
+                if settings.speechProcessingMode == .local {
+                    statusRow("Mode", "Local — Parakeet TDT 0.6B v3")
+                    statusRow("Model", speechModelManager.status.displayText)
+                    Text("Downloaded once by FluidAudio and then loaded from its local cache.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    statusRow("Mode", "API")
+                    Text("API provider is not configured.")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(.orange)
+                    Text("No audio will be sent anywhere until a provider is configured.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
+
         }
         .formStyle(.grouped)
         .padding(8)
-        .frame(minWidth: 480, minHeight: 620)
+        .frame(minWidth: 500, minHeight: 620)
         .onAppear {
             permissionManager.beginSettingsMonitoring()
         }
         .onDisappear {
             permissionManager.endSettingsMonitoring()
         }
+    }
+
+    private var apiModeBinding: Binding<Bool> {
+        Binding(
+            get: { settings.speechProcessingMode == .api },
+            set: { settings.speechProcessingMode = $0 ? .api : .local }
+        )
     }
 
     private func permissionRow(
@@ -135,7 +145,7 @@ struct SettingsView: View {
         .padding(.vertical, 2)
     }
 
-    private func diagnosticsRow(_ title: String, _ value: String) -> some View {
+    private func statusRow(_ title: String, _ value: String) -> some View {
         LabeledContent(title) {
             Text(value)
                 .font(.system(.body, design: .monospaced))

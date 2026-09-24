@@ -213,6 +213,65 @@ func duplicateAndAutorepeatEventsAreIgnored() {
     #expect(matcher.consume(keyEvent(.keyUp, keyCode: 0)) == .ignored)
 }
 
+@Test("Internal generated Cmd+V events are neither matched nor suppressed")
+func internalSyntheticPasteIsIgnored() {
+    var matcher = HotkeyMatcher(
+        shortcut: HotkeyShortcut(modifierKeyCodes: [PhysicalModifierKey.leftCommand.rawValue])
+    )
+    let commandDown = HotkeyInputEvent(
+        type: .flagsChanged,
+        keyCode: PhysicalModifierKey.leftCommand.rawValue,
+        flags: .maskCommand,
+        physicalKeyIsDown: true,
+        isInternalSynthetic: true
+    )
+    let vDown = HotkeyInputEvent(
+        type: .keyDown,
+        keyCode: 9,
+        flags: .maskCommand,
+        isInternalSynthetic: true
+    )
+
+    #expect(matcher.consume(commandDown) == .ignored)
+    #expect(matcher.consume(vDown) == .ignored)
+    #expect(matcher.isBoundKeyPhysicallyDown == false)
+}
+
+@Test("Generated CGEvents retain the VoiceInput internal marker")
+func generatedCGEventMarkerRoundTrips() throws {
+    let event = try #require(CGEvent(
+        keyboardEventSource: CGEventSource(stateID: .privateState),
+        virtualKey: 9,
+        keyDown: true
+    ))
+    VoiceInputSyntheticEvent.mark(event)
+    #expect(VoiceInputSyntheticEvent.isMarked(event))
+}
+
+@Test("Event tap returns the original marked synthetic event instead of suppressing it")
+@MainActor
+func markedSyntheticEventPassesThroughEventTap() throws {
+    let manager = HotkeyManager(shortcut: HotkeyShortcut(keyCode: 9))
+    var hotkeyEvents: [DictationHotkeyEvent] = []
+    manager.onEvent = { hotkeyEvents.append($0) }
+    let event = try #require(CGEvent(
+        keyboardEventSource: CGEventSource(stateID: .hidSystemState),
+        virtualKey: 9,
+        keyDown: true
+    ))
+    event.flags = .maskCommand
+    VoiceInputSyntheticEvent.mark(event)
+
+    let suppress = manager.handle(type: .keyDown, event: event)
+    let returned = hotkeyTapCallbackResult(event: event, suppress: suppress)
+
+    #expect(suppress == false)
+    #expect(returned != nil)
+    #expect(returned?.takeUnretainedValue() === event)
+    #expect(hotkeyEvents.isEmpty)
+    #expect(manager.boundKeyIsDown == false)
+}
+
 @Test("HotkeyManager rebind A to B removes A from callbacks and suppression")
 @MainActor
 func managerRebindRegularKeyIntegration() {

@@ -19,11 +19,13 @@
     <key>CFBundleVersion</key>
     <string>2</string>
     <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
+	<string>14.0</string>
     <key>LSUIElement</key>
     <true/>
-    <key>NSHighResolutionCapable</key>
-    <true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>VoiceInput needs microphone access to transcribe your speech locally.</string>
     <key>NSHumanReadableCopyright</key>
     <string>VoiceInput. Includes MIT-licensed code adapted from SuperDictate/Parakey.</string>
 </dict>

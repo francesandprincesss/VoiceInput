@@ -13,7 +13,7 @@ struct HistoryView: View {
                             .foregroundStyle(.secondary)
                         Text("No History Yet")
                             .font(.title3.weight(.semibold))
-                        Text("Transcribed text will appear here in a future version.")
+                        Text("Your local transcriptions will appear here.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }
@@ -38,6 +38,12 @@ struct HistoryView: View {
             Divider()
 
             HStack {
+                if let error = store.persistenceError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .lineLimit(2)
+                }
                 Spacer()
                 Button("Clear", role: .destructive) {
                     store.clear()

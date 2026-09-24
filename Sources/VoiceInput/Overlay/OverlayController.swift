@@ -1,7 +1,7 @@
 import AppKit
 
 @MainActor
-final class OverlayController {
+final class OverlayController: DictationStatePresenting {
     private static let baseSize = NSSize(width: 64, height: 38)
     private static let visualScale: CGFloat = 1.5
     private static let animateInDuration: TimeInterval = 0.32
@@ -24,7 +24,7 @@ final class OverlayController {
     private var revealDuration = animateInDuration
     private var hideWhenRevealFinishes = false
 
-    init(audioLevelProvider: AudioLevelProviding = MockAudioLevelProvider()) {
+    init(audioLevelProvider: AudioLevelProviding) {
         self.audioLevelProvider = audioLevelProvider
         overlayView = OverlayView(frame: NSRect(origin: .zero, size: panelSize))
         panel = OverlayPanel(

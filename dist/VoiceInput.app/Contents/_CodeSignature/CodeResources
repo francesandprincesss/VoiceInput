@@ -4,18 +4,29 @@
 <dict>
 	<key>files</key>
 	<dict>
+		<key>Resources/MODEL_ATTRIBUTION.md</key>
+		<data>
+		dOew7vJYPVNO6IrCLkb5uTBWsPw=
+		</data>
 		<key>Resources/THIRD_PARTY_NOTICES.md</key>
 		<data>
-		+WWDmZare+EuTZPE+ELmbuH5sCg=
+		5Ur2M72YDHAZWxs3D7WeCibgg/I=
 		</data>
 	</dict>
 	<key>files2</key>
 	<dict>
+		<key>Resources/MODEL_ATTRIBUTION.md</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			lwGm+HNgdgtqNQizNjRI/gqAMFWxeCuNq/Jttd/jv9E=
+			</data>
+		</dict>
 		<key>Resources/THIRD_PARTY_NOTICES.md</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			xRWW6xUCzjcA6uJ8cxoTSrRshbizAa1czfkFZB1kiUM=
+			da2SuGGy8hGHkBoFgUqYBCBs9ehcgmguxApRnY7QoC0=
 			</data>
 		</dict>
 	</dict>

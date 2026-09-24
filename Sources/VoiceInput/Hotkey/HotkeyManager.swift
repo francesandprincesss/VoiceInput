@@ -1,6 +1,14 @@
 import AppKit
 import Combine
 import CoreGraphics
+import OSLog
+
+func hotkeyTapCallbackResult(
+    event: CGEvent,
+    suppress: Bool
+) -> Unmanaged<CGEvent>? {
+    suppress ? nil : Unmanaged.passUnretained(event)
+}
 
 enum EventTapStatus: Equatable, Sendable {
     case active
@@ -27,6 +35,7 @@ enum EventTapStatus: Equatable, Sendable {
 
 @MainActor
 final class HotkeyManager: ObservableObject {
+    private static let logger = Logger(subsystem: "com.local.voiceinput", category: "Hotkey")
     @Published private(set) var eventTapStatus: EventTapStatus
     @Published private(set) var boundKeyIsDown = false
 
@@ -109,7 +118,7 @@ final class HotkeyManager: ObservableObject {
                     }
                     return manager.handle(type: type, event: event)
                 }
-                return suppress ? nil : Unmanaged.passUnretained(event)
+                return hotkeyTapCallbackResult(event: event, suppress: suppress)
             },
             userInfo: context
         ) else {
@@ -163,7 +172,11 @@ final class HotkeyManager: ObservableObject {
         publishPhysicalState()
     }
 
-    private func handle(type: CGEventType, event: CGEvent) -> Bool {
+    func handle(type: CGEventType, event: CGEvent) -> Bool {
+        if VoiceInputSyntheticEvent.isMarked(event) {
+            Self.logger.notice("[Hotkey] internal synthetic event pass-through")
+            return false
+        }
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let inputType: HotkeyInputEventType
         switch type {
@@ -187,7 +200,8 @@ final class HotkeyManager: ObservableObject {
             flags: event.flags,
             isAutoRepeat: type == .keyDown
                 && event.getIntegerValueField(.keyboardEventAutorepeat) != 0,
-            physicalKeyIsDown: physicalKeyIsDown
+            physicalKeyIsDown: physicalKeyIsDown,
+            isInternalSynthetic: VoiceInputSyntheticEvent.isMarked(event)
         ))
     }
 

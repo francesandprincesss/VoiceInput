@@ -11,6 +11,7 @@ struct HotkeyInputEvent: Equatable, Sendable {
     let keyCode: UInt16
     let flagsRawValue: UInt64
     let isAutoRepeat: Bool
+    let isInternalSynthetic: Bool
     /// Physical state for this exact modifier key. It disambiguates releasing
     /// one side while the other side of the same modifier family remains down.
     let physicalKeyIsDown: Bool?
@@ -20,13 +21,15 @@ struct HotkeyInputEvent: Equatable, Sendable {
         keyCode: UInt16,
         flags: CGEventFlags = [],
         isAutoRepeat: Bool = false,
-        physicalKeyIsDown: Bool? = nil
+        physicalKeyIsDown: Bool? = nil,
+        isInternalSynthetic: Bool = false
     ) {
         self.type = type
         self.keyCode = keyCode
         flagsRawValue = flags.rawValue
         self.isAutoRepeat = isAutoRepeat
         self.physicalKeyIsDown = physicalKeyIsDown
+        self.isInternalSynthetic = isInternalSynthetic
     }
 
     var flags: CGEventFlags { CGEventFlags(rawValue: flagsRawValue) }
@@ -67,6 +70,7 @@ struct HotkeyMatcher: Sendable {
     }
 
     mutating func consume(_ event: HotkeyInputEvent) -> HotkeyMatchResult {
+        guard !event.isInternalSynthetic else { return .ignored }
         guard let shortcut else { return .ignored }
 
         if event.type == .flagsChanged,

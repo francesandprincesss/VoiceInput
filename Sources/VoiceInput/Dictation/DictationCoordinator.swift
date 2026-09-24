@@ -1,77 +1,130 @@
 import Foundation
+import OSLog
 
-struct DictationSimulationTiming: Sendable {
-    let processingDuration: TimeInterval
-    let successDuration: TimeInterval
-
-    static let development = DictationSimulationTiming(
-        processingDuration: 0.75,
-        successDuration: 0.55
-    )
+@MainActor
+protocol DictationStatePresenting: AnyObject {
+    func apply(state: DictationState)
 }
 
 @MainActor
 final class DictationCoordinator: ObservableObject {
+    private static let logger = Logger(subsystem: "com.local.voiceinput", category: "Dictation")
     @Published private(set) var state: DictationState = .idle
+    @Published private(set) var lastError: String?
 
-    private var machine = DictationStateMachine()
-    private let overlayController: OverlayController
-    private let simulationTiming: DictationSimulationTiming
-    private let simulatesProcessing: Bool
-    private var simulationTask: Task<Void, Never>?
+    private let recorder: AudioRecordingService
+    private let speech: SpeechRecognizer
+    private let targetCapture: InsertionTargetCapturing
+    private let textInserter: TextInserting
+    private let history: HistoryStoring
+    private let presenter: DictationStatePresenting
+    private let language: () -> SpeechRecognitionLanguage
+    private let successDisplayDuration: Duration
+    private var insertionTarget: InsertionTarget?
+    private var processingTask: Task<Void, Never>?
 
     init(
-        overlayController: OverlayController,
-        simulationTiming: DictationSimulationTiming = .development,
-        simulatesProcessing: Bool = true
+        recorder: AudioRecordingService,
+        speech: SpeechRecognizer,
+        targetCapture: InsertionTargetCapturing,
+        textInserter: TextInserting,
+        history: HistoryStoring,
+        presenter: DictationStatePresenting,
+        language: @escaping () -> SpeechRecognitionLanguage,
+        successDisplayDuration: Duration = .milliseconds(550)
     ) {
-        self.overlayController = overlayController
-        self.simulationTiming = simulationTiming
-        self.simulatesProcessing = simulatesProcessing
+        self.recorder = recorder
+        self.speech = speech
+        self.targetCapture = targetCapture
+        self.textInserter = textInserter
+        self.history = history
+        self.presenter = presenter
+        self.language = language
+        self.successDisplayDuration = successDisplayDuration
     }
 
     func handleHotkey(_ event: DictationHotkeyEvent, mode: HotkeyMode) {
-        guard machine.handle(event, mode: mode) else { return }
-        publishState()
+        if case .keyDown(isAutoRepeat: true) = event { return }
+        guard state != .processing, state != .success else { return }
 
-        if state == .processing, simulatesProcessing {
-            scheduleSimulatedCompletion()
+        switch (mode, event, state) {
+        case (.toggle, .keyDown, .idle), (.pushToTalk, .keyDown, .idle):
+            beginRecording()
+        case (.toggle, .keyDown, .recording), (.pushToTalk, .keyUp, .recording):
+            finishRecording()
+        default:
+            break
         }
     }
 
-    func processingDidFinish() {
-        simulationTask?.cancel()
-        guard machine.processingDidFinish() else { return }
-        publishState()
-        scheduleSuccessDismissal()
+    func waitForCurrentOperation() async {
+        await processingTask?.value
     }
 
-    private func scheduleSimulatedCompletion() {
-        simulationTask?.cancel()
-        let delay = simulationTiming.processingDuration
-        simulationTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: Self.nanoseconds(delay))
-            guard !Task.isCancelled else { return }
-            self?.processingDidFinish()
+    private func beginRecording() {
+        Self.logger.debug("[Dictation] start requested")
+        guard speech.status == .ready else {
+            lastError = "Speech model is not ready: \(speech.status.displayText)"
+            Self.logger.error("[Dictation][ERROR] \(self.lastError ?? "Unknown model error", privacy: .public)")
+            insertionTarget = nil
+            processingTask = nil
+            recorder.cancelRecording()
+            publish(.idle)
+            return
+        }
+        do {
+            let target = try targetCapture.capture()
+            Self.logger.debug("[Dictation] target captured: pid=\(target.processIdentifier, privacy: .public)")
+            try recorder.startRecording()
+            insertionTarget = target
+            lastError = nil
+            publish(.recording)
+            Self.logger.debug("[Dictation] recording")
+        } catch {
+            recorder.cancelRecording()
+            insertionTarget = nil
+            processingTask = nil
+            lastError = error.localizedDescription
+            Self.logger.error("[Dictation][ERROR] \(error.localizedDescription, privacy: .public)")
+            publish(.idle)
         }
     }
 
-    private func scheduleSuccessDismissal() {
-        let delay = simulationTiming.successDuration
-        simulationTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: Self.nanoseconds(delay))
-            guard !Task.isCancelled, let self else { return }
-            guard self.machine.successDidFinish() else { return }
-            self.publishState()
+    private func finishRecording() {
+        guard processingTask == nil, let target = insertionTarget else { return }
+        Self.logger.debug("[Dictation] stop requested")
+        publish(.processing)
+        let recognitionLanguage = language()
+        processingTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let audio = try await recorder.stopRecording()
+                Self.logger.debug("[Speech] transcribing \(audio.samples.count, privacy: .public) frames")
+                let transcript = try await speech.transcribe(audio, language: recognitionLanguage)
+                Self.logger.debug("[Speech] transcription finished")
+                history.add(text: transcript)
+                do {
+                    try await textInserter.insert(transcript, into: target)
+                    Self.logger.debug("[Dictation] text inserted")
+                    lastError = nil
+                    publish(.success)
+                    try? await Task.sleep(for: successDisplayDuration)
+                } catch {
+                    lastError = "Text was recognized and saved to History, but insertion failed: \(error.localizedDescription)"
+                    Self.logger.error("[Dictation][ERROR] \(self.lastError ?? "Text insertion failed", privacy: .public)")
+                }
+            } catch {
+                lastError = error.localizedDescription
+                Self.logger.error("[Dictation][ERROR] \(error.localizedDescription, privacy: .public)")
+            }
+            insertionTarget = nil
+            processingTask = nil
+            publish(.idle)
         }
     }
 
-    private func publishState() {
-        state = machine.state
-        overlayController.apply(state: state)
-    }
-
-    nonisolated private static func nanoseconds(_ seconds: TimeInterval) -> UInt64 {
-        UInt64(max(0, seconds) * 1_000_000_000)
+    private func publish(_ newState: DictationState) {
+        state = newState
+        presenter.apply(state: newState)
     }
 }
