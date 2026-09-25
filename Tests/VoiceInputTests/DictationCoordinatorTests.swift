@@ -45,6 +45,68 @@ struct DictationCoordinatorTests {
         #expect(context.speech.transcriptionCount == 1)
         #expect(context.inserter.values == ["recognized text"])
         #expect(context.history.values == ["recognized text"])
+        #expect(context.presenter.states.contains(.processing))
+        #expect(context.presenter.states.contains(.success))
+        #expect(context.coordinator.state == .idle)
+    }
+
+    @Test("Successful insertion presents success before returning to idle")
+    func successThenIdle() async {
+        let context = Context()
+        await context.runToggle()
+
+        let successIndex = context.presenter.states.firstIndex(of: .success)
+        let idleIndex = context.presenter.states.lastIndex(of: .idle)
+        #expect(successIndex != nil)
+        #expect(idleIndex != nil)
+        #expect(successIndex! < idleIndex!)
+    }
+
+    @Test("Recording changes to processing only after recorder stop completes")
+    func processingStartsAfterRecorderStops() async {
+        let context = Context()
+        context.coordinator.handleHotkey(.keyDown(isAutoRepeat: false), mode: .toggle)
+        context.coordinator.handleHotkey(.keyDown(isAutoRepeat: false), mode: .toggle)
+        await context.coordinator.waitForCurrentOperation()
+
+        let stopIndex = context.events.values.firstIndex(of: "recorder stopped")
+        let processingIndex = context.events.values.firstIndex(of: "state processing")
+        #expect(stopIndex != nil)
+        #expect(processingIndex != nil)
+        #expect(stopIndex! < processingIndex!)
+    }
+
+    @Test("Transcription completion alone does not show success while insertion is pending")
+    func successWaitsForInsertion() async {
+        let context = Context()
+        context.inserter.shouldSuspend = true
+        context.coordinator.handleHotkey(.keyDown(isAutoRepeat: false), mode: .toggle)
+        context.coordinator.handleHotkey(.keyDown(isAutoRepeat: false), mode: .toggle)
+        await waitUntil { !context.inserter.values.isEmpty }
+
+        #expect(context.speech.transcriptionCount == 1)
+        #expect(context.coordinator.state == .processing)
+        #expect(!context.presenter.states.contains(.success))
+
+        context.inserter.resume()
+        await context.coordinator.waitForCurrentOperation()
+        #expect(context.presenter.states.contains(.success))
+        #expect(context.coordinator.state == .idle)
+    }
+
+    @Test("Processing remains active for real transcription work without a fixed completion")
+    func processingTracksTranscription() async {
+        let context = Context()
+        context.speech.shouldSuspend = true
+        context.coordinator.handleHotkey(.keyDown(isAutoRepeat: false), mode: .toggle)
+        context.coordinator.handleHotkey(.keyDown(isAutoRepeat: false), mode: .toggle)
+        await waitUntil { context.speech.transcriptionCount == 1 }
+
+        #expect(context.coordinator.state == .processing)
+        #expect(!context.presenter.states.contains(.success))
+
+        context.speech.resume()
+        await context.coordinator.waitForCurrentOperation()
         #expect(context.coordinator.state == .idle)
     }
 
@@ -77,6 +139,7 @@ struct DictationCoordinatorTests {
         await context.runToggle()
         #expect(context.inserter.values == ["recognized text"])
         #expect(context.history.values == ["recognized text"])
+        #expect(!context.presenter.states.contains(.success))
         #expect(context.coordinator.state == .idle)
     }
 
@@ -158,8 +221,11 @@ private final class Context {
     let history = HistoryMock()
     let presenter = PresenterMock()
     let coordinator: DictationCoordinator
+    let events = EventTrace()
 
     init() {
+        recorder.onStopCompleted = { [events] in events.values.append("recorder stopped") }
+        presenter.onApply = { [events] state in events.values.append("state \(state)") }
         coordinator = DictationCoordinator(
             recorder: recorder,
             speech: speech,
@@ -185,12 +251,14 @@ private final class RecorderMock: AudioRecordingService {
     var stopCount = 0
     var cancelCount = 0
     var startError: Error?
+    var onStopCompleted: (() -> Void)?
     func startRecording() throws {
         startCount += 1
         if let startError { throw startError }
     }
     func stopRecording() async throws -> CapturedAudio {
         stopCount += 1
+        onStopCompleted?()
         return CapturedAudio(samples: [0.1, 0.2], sampleRate: 16_000)
     }
     func cancelRecording() { cancelCount += 1 }
@@ -201,11 +269,21 @@ private final class SpeechMock: SpeechRecognizer {
     var status: SpeechModelStatus = .ready
     var transcriptionCount = 0
     var error: Error?
+    var shouldSuspend = false
+    private var continuation: CheckedContinuation<Void, Never>?
     func prepare() {}
     func transcribe(_ audio: CapturedAudio, language: SpeechRecognitionLanguage) async throws -> String {
         transcriptionCount += 1
+        if shouldSuspend {
+            await withCheckedContinuation { continuation = $0 }
+        }
         if let error { throw error }
         return "recognized text"
+    }
+
+    func resume() {
+        continuation?.resume()
+        continuation = nil
     }
 }
 
@@ -225,10 +303,21 @@ private final class InserterMock: TextInserting {
     var values: [String] = []
     var targetPIDs: [pid_t] = []
     var error: Error?
+    var shouldSuspend = false
+    private var continuation: CheckedContinuation<Void, Never>?
     func insert(_ text: String, into target: InsertionTarget) async throws {
         values.append(text)
         targetPIDs.append(target.processIdentifier)
+        if shouldSuspend {
+            await withCheckedContinuation { continuation = $0 }
+        }
         if let error { throw error }
+    }
+
+
+    func resume() {
+        continuation?.resume()
+        continuation = nil
     }
 }
 
@@ -241,7 +330,25 @@ private final class HistoryMock: HistoryStoring {
 @MainActor
 private final class PresenterMock: DictationStatePresenting {
     var states: [DictationState] = []
-    func apply(state: DictationState) { states.append(state) }
+    var onApply: ((DictationState) -> Void)?
+    func apply(state: DictationState) {
+        states.append(state)
+        onApply?(state)
+    }
+}
+
+@MainActor
+private final class EventTrace {
+    var values: [String] = []
+}
+
+@MainActor
+private func waitUntil(_ condition: () -> Bool) async {
+    for _ in 0..<100 {
+        if condition() { return }
+        await Task.yield()
+    }
+    Issue.record("Timed out waiting for an asynchronous test condition")
 }
 
 private enum TestFailure: Error {

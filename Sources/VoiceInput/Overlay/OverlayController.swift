@@ -2,31 +2,26 @@ import AppKit
 
 @MainActor
 final class OverlayController: DictationStatePresenting {
-    private static let baseSize = NSSize(width: 64, height: 38)
-    private static let visualScale: CGFloat = 1.5
-    private static let animateInDuration: TimeInterval = 0.32
-    private static let animateOutDuration: TimeInterval = 0.23
-
     private let panel: OverlayPanel
     private let overlayView: OverlayView
     private let audioLevelProvider: AudioLevelProviding
-    private let panelSize = NSSize(
-        width: baseSize.width * visualScale,
-        height: baseSize.height * visualScale
-    )
-    private let bottomInset: CGFloat = 42
+    private let panelSize = OverlayMetrics.size
 
     private var motionTimer: Timer?
     private var lastTick = ProcessInfo.processInfo.systemUptime
     private var revealStartedAt: TimeInterval?
     private var revealFrom: CGFloat = 0
     private var revealTo: CGFloat = 1
-    private var revealDuration = animateInDuration
+    private var revealDuration = OverlayTiming.revealDuration
     private var hideWhenRevealFinishes = false
 
-    init(audioLevelProvider: AudioLevelProviding) {
+    init(
+        audioLevelProvider: AudioLevelProviding,
+        appearance: OverlayAppearance = .system
+    ) {
         self.audioLevelProvider = audioLevelProvider
         overlayView = OverlayView(frame: NSRect(origin: .zero, size: panelSize))
+        overlayView.appearanceMode = appearance
         panel = OverlayPanel(
             contentRect: NSRect(origin: .zero, size: panelSize),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -34,6 +29,10 @@ final class OverlayController: DictationStatePresenting {
             defer: false
         )
         configurePanel()
+    }
+
+    func setAppearance(_ appearance: OverlayAppearance) {
+        overlayView.appearanceMode = appearance
     }
 
     func apply(state: DictationState) {
@@ -66,7 +65,7 @@ final class OverlayController: DictationStatePresenting {
         hideWhenRevealFinishes = false
         overlayView.revealProgress = 0
         panel.orderFrontRegardless()
-        startReveal(from: 0, to: 1, duration: Self.animateInDuration)
+        startReveal(from: 0, to: 1, duration: OverlayTiming.revealDuration)
     }
 
     private func ensureVisible() {
@@ -88,7 +87,7 @@ final class OverlayController: DictationStatePresenting {
         startReveal(
             from: overlayView.revealProgress,
             to: 0,
-            duration: Self.animateOutDuration
+            duration: OverlayTiming.fadeOutDuration
         )
     }
 
@@ -113,7 +112,7 @@ final class OverlayController: DictationStatePresenting {
         guard let visibleFrame = screen?.visibleFrame else { return }
         panel.setFrameOrigin(NSPoint(
             x: visibleFrame.midX - panelSize.width / 2,
-            y: visibleFrame.minY + bottomInset
+            y: visibleFrame.minY + OverlayMetrics.bottomInset
         ))
     }
 

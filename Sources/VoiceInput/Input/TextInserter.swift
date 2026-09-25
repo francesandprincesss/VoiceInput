@@ -228,6 +228,14 @@ final class SystemTextInserter: TextInserting {
     private let useAXDirectInsertion: Bool
     private let secureEventInputIsEnabled: @MainActor () -> Bool
     private let sleep: @MainActor (Duration) async -> Void
+    private var pendingRestoration: PendingClipboardRestoration?
+    private var restorationTask: Task<Void, Never>?
+
+    private struct PendingClipboardRestoration {
+        let id: UUID
+        let snapshot: PasteboardSnapshot
+        let expectedChangeCount: Int
+    }
 
     convenience init() {
         self.init(
@@ -320,6 +328,7 @@ final class SystemTextInserter: TextInserting {
             Self.logger.error("[Insertion][ERROR] secure event input is enabled; paste cancelled")
             throw TextInsertionError.secureField
         }
+        restorePendingClipboardNow(reason: "superseded by a new insertion")
         let snapshot = PasteboardSnapshot(pasteboard: pasteboard)
         let originalChangeCount = pasteboard.changeCount
         pasteboard.clearContents()
@@ -372,9 +381,51 @@ final class SystemTextInserter: TextInserting {
             throw TextInsertionError.pasteEventCreationFailed
         }
 
-        await sleep(clipboardRestoreDelay)
-        restoreClipboardIfOwned(snapshot, expectedChangeCount: voiceInputChangeCount)
-        Self.logger.notice("[Insertion] paste fallback completed")
+        scheduleClipboardRestoration(
+            snapshot,
+            expectedChangeCount: voiceInputChangeCount
+        )
+        Self.logger.notice("[Insertion] paste fallback dispatched")
+    }
+
+    func waitForPendingClipboardRestoration() async {
+        let task = restorationTask
+        await task?.value
+    }
+
+    private func scheduleClipboardRestoration(
+        _ snapshot: PasteboardSnapshot,
+        expectedChangeCount: Int
+    ) {
+        let pending = PendingClipboardRestoration(
+            id: UUID(),
+            snapshot: snapshot,
+            expectedChangeCount: expectedChangeCount
+        )
+        pendingRestoration = pending
+        restorationTask = Task { @MainActor in
+            await sleep(clipboardRestoreDelay)
+            guard !Task.isCancelled,
+                  pendingRestoration?.id == pending.id else { return }
+            restoreClipboardIfOwned(
+                pending.snapshot,
+                expectedChangeCount: pending.expectedChangeCount
+            )
+            pendingRestoration = nil
+            restorationTask = nil
+        }
+    }
+
+    private func restorePendingClipboardNow(reason: String) {
+        restorationTask?.cancel()
+        restorationTask = nil
+        guard let pending = pendingRestoration else { return }
+        restoreClipboardIfOwned(
+            pending.snapshot,
+            expectedChangeCount: pending.expectedChangeCount
+        )
+        pendingRestoration = nil
+        Self.logger.debug("[Insertion] pending clipboard restoration completed: \(reason, privacy: .public)")
     }
 
     private func logFocusRestoration(_ result: AXFocusRestorationResult) {

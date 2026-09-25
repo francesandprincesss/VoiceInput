@@ -23,6 +23,7 @@ final class AppSettings: ObservableObject {
         static let language = "language"
         static let hotkeyShortcut = "hotkeyShortcut"
         static let speechProcessingMode = "speechProcessingMode"
+        static let overlayAppearance = "overlayAppearance"
     }
 
     private struct StoredShortcut: Codable {
@@ -43,6 +44,10 @@ final class AppSettings: ObservableObject {
 
     @Published var speechProcessingMode: SpeechProcessingMode {
         didSet { defaults.set(speechProcessingMode.rawValue, forKey: Key.speechProcessingMode) }
+    }
+
+    @Published var overlayAppearance: OverlayAppearance {
+        didSet { defaults.set(overlayAppearance.rawValue, forKey: Key.overlayAppearance) }
     }
 
     private let defaults: UserDefaults
@@ -66,6 +71,9 @@ final class AppSettings: ObservableObject {
         speechProcessingMode = SpeechProcessingMode(
             rawValue: defaults.string(forKey: Key.speechProcessingMode) ?? ""
         ) ?? .local
+        overlayAppearance = OverlayAppearance(
+            rawValue: defaults.string(forKey: Key.overlayAppearance) ?? ""
+        ) ?? .system
         if let data = defaults.data(forKey: Key.hotkeyShortcut),
            let stored = try? JSONDecoder().decode(StoredShortcut.self, from: data) {
             hotkeyShortcut = stored.shortcut

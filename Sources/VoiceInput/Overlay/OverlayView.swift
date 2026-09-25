@@ -22,19 +22,18 @@ final class OverlayView: NSView {
     var level: Float = 0 { didSet { needsDisplay = true } }
     var phase: CGFloat = 0 { didSet { needsDisplay = true } }
     var revealProgress: CGFloat = 1 { didSet { needsDisplay = true } }
+    var appearanceMode: OverlayAppearance = .system {
+        didSet { needsDisplay = true }
+    }
 
-    private let visualScale: CGFloat = 1.5
-    private let recordingColor = NSColor.systemRed
-    private let processingColor = NSColor(
-        calibratedRed: 0.0,
-        green: 0.44,
-        blue: 1.0,
-        alpha: 1
-    )
-    private let successColor = NSColor.systemGreen
     private var modeChangedAt = ProcessInfo.processInfo.systemUptime
 
     override var isFlipped: Bool { true }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
@@ -44,6 +43,10 @@ final class OverlayView: NSView {
     private func drawOverlay() {
         let reveal = max(0, min(1, revealProgress))
         guard reveal > 0.001 else { return }
+        let style = OverlayStyle.resolve(
+            appearanceMode,
+            systemIsDark: effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        )
 
         let audio = pow(CGFloat(max(0, min(1, level))), 0.82)
         let settlePeak: CGFloat = 0.68
@@ -58,8 +61,11 @@ final class OverlayView: NSView {
 
         let capsuleAlpha = smootherstep(0, 0.34, reveal)
         let contentAlpha = smootherstep(0.16, 0.78, reveal)
-        let startDiameter = 6 * visualScale
-        let finalRect = bounds.insetBy(dx: 4 * visualScale, dy: 4 * visualScale)
+        let startDiameter: CGFloat = 6
+        let finalRect = bounds.insetBy(
+            dx: OverlayMetrics.contentInset,
+            dy: OverlayMetrics.contentInset
+        )
         let breathingReady = smootherstep(0.82, 1, reveal)
         let idleBreath = 0.0032 + 0.0018 * sin(phase * 0.31)
         let voiceBreath = audio * (0.014 + 0.008 * ((sin(phase * 0.87) + 1) / 2))
@@ -77,13 +83,17 @@ final class OverlayView: NSView {
         )
         let capsule = NSBezierPath(
             roundedRect: capsuleRect,
-            xRadius: capsuleRect.height / 2,
-            yRadius: capsuleRect.height / 2
+            xRadius: min(OverlayMetrics.cornerRadius, capsuleRect.height / 2),
+            yRadius: min(OverlayMetrics.cornerRadius, capsuleRect.height / 2)
         )
-        NSColor(calibratedWhite: 0, alpha: 0.96 * capsuleAlpha).setFill()
+        style.backgroundColor.withAlphaComponent(
+            style.backgroundOpacity * capsuleAlpha
+        ).setFill()
         capsule.fill()
-        NSColor(calibratedWhite: 0.22, alpha: 0.26 * capsuleAlpha).setStroke()
-        capsule.lineWidth = visualScale
+        style.foregroundColor.withAlphaComponent(
+            OverlayMetrics.borderOpacity * capsuleAlpha
+        ).setStroke()
+        capsule.lineWidth = 0.8
         capsule.stroke()
 
         guard contentAlpha > 0.001 else { return }
@@ -98,20 +108,28 @@ final class OverlayView: NSView {
 
         switch mode {
         case .recording:
-            drawRecordingBars(in: capsuleRect, audio: audio)
+            drawRecordingBars(
+                in: capsuleRect,
+                audio: audio,
+                color: style.foregroundColor
+            )
         case .processing:
-            drawProcessingBars(in: capsuleRect)
+            drawProcessingBars(in: capsuleRect, color: style.foregroundColor)
         case .success:
-            drawSuccess(in: capsuleRect)
+            drawSuccess(in: capsuleRect, color: style.foregroundColor)
         }
     }
 
-    private func drawRecordingBars(in capsuleRect: NSRect, audio: CGFloat) {
-        let barCount = 8
-        let barWidth = 2.05 * visualScale
-        let barGap = 2.55 * visualScale
-        let minHeight = 3.0 * visualScale
-        let maxHeight = min(capsuleRect.height * 0.58, 13.2 * visualScale)
+    private func drawRecordingBars(
+        in capsuleRect: NSRect,
+        audio: CGFloat,
+        color: NSColor
+    ) {
+        let barCount = OverlayMetrics.barCount
+        let barWidth = OverlayMetrics.barWidth
+        let barGap = OverlayMetrics.barGap
+        let minHeight = OverlayMetrics.minimumBarHeight
+        let maxHeight = min(capsuleRect.height * 0.62, OverlayMetrics.maximumBarHeight)
         let totalWidth = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * barGap
         let startX = bounds.midX - totalWidth / 2
         let centerIndex = CGFloat(barCount - 1) / 2
@@ -134,25 +152,25 @@ final class OverlayView: NSView {
                 x: startX + i * (barWidth + barGap),
                 height: minHeight + (maxHeight - minHeight) * activity,
                 width: barWidth,
-                color: recordingColor,
+                color: color,
                 glow: 0.07 + 0.10 * activity,
                 alpha: 0.74 + 0.26 * activity
             )
         }
     }
 
-    private func drawProcessingBars(in capsuleRect: NSRect) {
-        let barCount = 8
-        let barWidth = 2.05 * visualScale
-        let barGap = 2.55 * visualScale
-        let minHeight = 3.2 * visualScale
-        let maxHeight = min(capsuleRect.height * 0.60, 14.6 * visualScale)
+    private func drawProcessingBars(in capsuleRect: NSRect, color: NSColor) {
+        let barCount = OverlayMetrics.barCount
+        let barWidth = OverlayMetrics.barWidth
+        let barGap = OverlayMetrics.barGap
+        let minHeight = OverlayMetrics.minimumBarHeight
+        let maxHeight = min(capsuleRect.height * 0.64, OverlayMetrics.maximumBarHeight)
         let totalWidth = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * barGap
         let startX = capsuleRect.midX - totalWidth / 2
         let centerIndex = CGFloat(barCount - 1) / 2
         let age = CGFloat(max(0, ProcessInfo.processInfo.systemUptime - modeChangedAt))
-        let resolveProgress = min(1, age / 0.20)
-        let loopPhase = max(0, age - 0.20)
+        let resolveProgress = min(1, age / OverlayTiming.processingTransitionDuration)
+        let loopPhase = max(0, age - OverlayTiming.processingTransitionDuration)
 
         for index in 0..<barCount {
             let i = CGFloat(index)
@@ -172,8 +190,6 @@ final class OverlayView: NSView {
                     + conversion * (0.14 * loopWave + 0.34 * reversePulse)
                     + front * (0.48 + 0.30 * envelope)
             )
-            let color = recordingColor.blended(withFraction: conversion, of: processingColor)
-                ?? processingColor
             drawBar(
                 x: startX + i * (barWidth + barGap),
                 height: minHeight + (maxHeight - minHeight) * activity,
@@ -199,7 +215,7 @@ final class OverlayView: NSView {
             width: width,
             height: height
         )
-        let glowRect = rect.insetBy(dx: -1.2 * visualScale, dy: -1.2 * visualScale)
+        let glowRect = rect.insetBy(dx: -1.1, dy: -1.1)
         color.withAlphaComponent(glow).setFill()
         NSBezierPath(
             roundedRect: glowRect,
@@ -214,18 +230,18 @@ final class OverlayView: NSView {
         ).fill()
     }
 
-    private func drawSuccess(in capsuleRect: NSRect) {
+    private func drawSuccess(in capsuleRect: NSRect, color: NSColor) {
         let age = CGFloat(max(0, ProcessInfo.processInfo.systemUptime - modeChangedAt))
-        let progress = smootherstep(0, 0.28, age)
+        let progress = smootherstep(0, OverlayTiming.checkRevealDuration, age)
         let path = NSBezierPath()
-        let start = NSPoint(x: capsuleRect.midX - 8 * visualScale, y: capsuleRect.midY)
+        let start = NSPoint(x: capsuleRect.midX - 9, y: capsuleRect.midY)
         let middle = NSPoint(
-            x: capsuleRect.midX - 2 * visualScale,
-            y: capsuleRect.midY + 6 * visualScale
+            x: capsuleRect.midX - 2,
+            y: capsuleRect.midY + 6
         )
         let end = NSPoint(
-            x: capsuleRect.midX + 10 * visualScale,
-            y: capsuleRect.midY - 7 * visualScale
+            x: capsuleRect.midX + 11,
+            y: capsuleRect.midY - 7
         )
         path.move(to: start)
         if progress < 0.45 {
@@ -242,8 +258,8 @@ final class OverlayView: NSView {
                 y: middle.y + (end.y - middle.y) * t
             ))
         }
-        successColor.withAlphaComponent(0.95).setStroke()
-        path.lineWidth = 2.4 * visualScale
+        color.withAlphaComponent(0.96).setStroke()
+        path.lineWidth = 2.6
         path.lineCapStyle = .round
         path.lineJoinStyle = .round
         path.stroke()

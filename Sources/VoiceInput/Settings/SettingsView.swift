@@ -46,6 +46,16 @@ struct SettingsView: View {
                 .frame(maxWidth: 220)
             }
 
+            Section("Overlay") {
+                Picker("Appearance", selection: $settings.overlayAppearance) {
+                    ForEach(OverlayAppearance.allCases) { appearance in
+                        Text(appearance.title).tag(appearance)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 300)
+            }
+
             Section("Permissions") {
                 Text("VoiceInput needs permission to listen for and suppress the global shortcut.")
                     .font(.callout)

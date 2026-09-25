@@ -85,6 +85,7 @@ struct TextInserterTests {
         context.pasteboard.writeObjects([item])
 
         try await context.inserter.insert("recognized text", into: context.target)
+        await context.inserter.waitForPendingClipboardRestoration()
 
         #expect(context.pasteboard.string(forType: .string) == "original text")
         #expect(context.pasteboard.data(forType: customType) == Data([0x01, 0x02, 0x03]))
@@ -132,8 +133,40 @@ struct TextInserterTests {
         )
 
         try await inserter.insert("recognized text", into: makeTarget())
+        await inserter.waitForPendingClipboardRestoration()
 
         #expect(pasteboard.string(forType: .string) == "user value")
+    }
+
+    @Test("Clipboard restoration does not block insertion completion")
+    func clipboardRestorationIsNonBlocking() async throws {
+        let pasteboard = makePasteboard()
+        pasteboard.setString("original", forType: .string)
+        let gate = RestorationGate()
+        let inserter = SystemTextInserter(
+            accessibilityInserter: AccessibilityMock(result: .unsupported("disabled")),
+            applicationActivator: ApplicationActivatorMock(frontmost: true),
+            pasteEventPoster: PasteEventPosterMock(),
+            pasteboard: pasteboard,
+            activationTimeout: .zero,
+            clipboardRestoreDelay: .seconds(2),
+            accessibilityIsTrusted: { true },
+            secureEventInputIsEnabled: { false },
+            sleep: { duration in
+                guard duration == .seconds(2) else { return }
+                await gate.wait()
+            }
+        )
+
+        try await inserter.insert("recognized text", into: makeTarget())
+        for _ in 0..<20 where !gate.hasWaiter { await Task.yield() }
+
+        #expect(gate.hasWaiter)
+        #expect(pasteboard.string(forType: .string) == "recognized text")
+
+        gate.resume()
+        await inserter.waitForPendingClipboardRestoration()
+        #expect(pasteboard.string(forType: .string) == "original")
     }
 
     @Test("Empty transcript performs no insertion")
@@ -223,12 +256,31 @@ private final class ApplicationActivatorMock: TargetApplicationActivating {
     var activationResult = true
     var activationPIDs: [pid_t] = []
 
+    init(frontmost: Bool = false) {
+        self.frontmost = frontmost
+    }
+
     func isApplicationAvailable(processIdentifier: pid_t) -> Bool { available }
     func isFrontmost(processIdentifier: pid_t) -> Bool { frontmost }
 
     func activate(processIdentifier: pid_t, timeout: Duration) async -> Bool {
         activationPIDs.append(processIdentifier)
         return activationResult
+    }
+}
+
+@MainActor
+private final class RestorationGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    var hasWaiter: Bool { continuation != nil }
+
+    func wait() async {
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func resume() {
+        continuation?.resume()
+        continuation = nil
     }
 }
 

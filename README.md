@@ -96,18 +96,38 @@ For normal development, always install and launch from the fixed location:
 
 ```sh
 ./scripts/install-dev-app.sh
-open ~/Applications/VoiceInput.app
+open /Applications/VoiceInput.app
 ```
 
 `install-dev-app.sh` refuses to replace the fixed application with an ad-hoc
-build. Keep all three values stable between builds:
+build. It stops an existing VoiceInput process, installs the new bundle,
+launches the copy at the fixed development path, and verifies the executable
+path of the running process. Keep all three values stable between builds:
 
 - bundle identifier: `com.local.voiceinput`;
 - signing certificate: `VoiceInput Local Development`;
-- application path: `~/Applications/VoiceInput.app`.
+- application path: `/Applications/VoiceInput.app`.
+
+`install-dev-app.sh` uses `sudo` only when the current user cannot write to
+`/Applications`. If the previous `~/Applications/VoiceInput.app` path still
+exists, the script reports it as a duplicate but does not delete it.
 
 Both build scripts verify the final signature. `build-app.sh` prints the full
 `codesign -dv --verbose=4` output and the designated requirement.
+
+## Application icon
+
+The source artwork is `Resources/AppIcon/app-icon-source.svg`. Every app-bundle
+build runs `scripts/generate-app-icon.sh`, which uses the macOS system tools
+`qlmanage`, `sips`, and `iconutil` to produce the standard 16–1024 px iconset
+and `Resources/AppIcon/VoiceInput.icns`. Generated files are reused while they
+are newer than the SVG and generator script. The ICNS file is copied to the
+app bundle and selected by `CFBundleIconFile` in `Resources/Info.plist`.
+
+Finder and Launchpad cache application icons. After installing, verify the
+icon on `/Applications/VoiceInput.app` (or in **Get Info**) and allow Finder or
+Launchpad a little time to refresh if an older icon is still shown. No system
+cache reset is required.
 
 ## Speech recognition mode
 

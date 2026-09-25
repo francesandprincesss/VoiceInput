@@ -8,6 +8,8 @@
     <string>VoiceInput</string>
     <key>CFBundleIdentifier</key>
     <string>com.local.voiceinput</string>
+    <key>CFBundleIconFile</key>
+    <string>VoiceInput.icns</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>

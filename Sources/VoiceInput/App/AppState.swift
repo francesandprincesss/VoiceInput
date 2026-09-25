@@ -1,9 +1,11 @@
 import AppKit
 import Combine
+import OSLog
 import SwiftUI
 
 @MainActor
 final class AppState {
+    private static let logger = Logger(subsystem: "com.local.voiceinput", category: "Lifecycle")
     let settings: AppSettings
     let historyStore: HistoryStore
     let overlayController: OverlayController
@@ -20,7 +22,10 @@ final class AppState {
     init() {
         let settings = AppSettings()
         let audioLevelMonitor = AudioLevelMonitor()
-        let overlayController = OverlayController(audioLevelProvider: audioLevelMonitor)
+        let overlayController = OverlayController(
+            audioLevelProvider: audioLevelMonitor,
+            appearance: settings.overlayAppearance
+        )
         let hotkeyManager = HotkeyManager(shortcut: settings.hotkeyShortcut)
         let permissionManager = PermissionManager()
         let historyStore = HistoryStore()
@@ -59,6 +64,13 @@ final class AppState {
             }
             .store(in: &cancellables)
 
+        settings.$overlayAppearance
+            .dropFirst()
+            .sink { [weak overlayController] appearance in
+                overlayController?.setAppearance(appearance)
+            }
+            .store(in: &cancellables)
+
         hotkeyManager.onEvent = { [weak settings, weak dictationCoordinator] event in
             guard let settings, let dictationCoordinator else { return }
             dictationCoordinator.handleHotkey(event, mode: settings.hotkeyMode)
@@ -77,9 +89,15 @@ final class AppState {
 
     func startHotkeyMonitoring() {
         permissionManager.refresh()
+        Self.logger.notice(
+            "[Lifecycle] permissions Input Monitoring=\(self.permissionManager.hasInputMonitoringPermission, privacy: .public), Accessibility=\(self.permissionManager.hasAccessibilityPermission, privacy: .public), Microphone=\(self.permissionManager.hasMicrophonePermission, privacy: .public)"
+        )
         hotkeyManager.updatePermissions(
             inputMonitoring: permissionManager.hasInputMonitoringPermission,
             accessibility: permissionManager.hasAccessibilityPermission
+        )
+        Self.logger.notice(
+            "[Lifecycle] Event Tap=\(self.hotkeyManager.eventTapStatus.diagnosticText, privacy: .public)"
         )
         speechRecognizerRouter.prepare()
     }

@@ -12,6 +12,10 @@
 		<data>
 		5Ur2M72YDHAZWxs3D7WeCibgg/I=
 		</data>
+		<key>Resources/VoiceInput.icns</key>
+		<data>
+		R8OAfbfRMRDKCwaMY7Q+5zHrea0=
+		</data>
 	</dict>
 	<key>files2</key>
 	<dict>
@@ -27,6 +31,13 @@
 			<key>hash2</key>
 			<data>
 			da2SuGGy8hGHkBoFgUqYBCBs9ehcgmguxApRnY7QoC0=
+			</data>
+		</dict>
+		<key>Resources/VoiceInput.icns</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			4Glnl+g+HDi15NMERRU3FjVwIc6LSibBtcaufoPVUfU=
 			</data>
 		</dict>
 	</dict>

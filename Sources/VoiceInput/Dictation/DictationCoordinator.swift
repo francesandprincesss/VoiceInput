@@ -31,7 +31,7 @@ final class DictationCoordinator: ObservableObject {
         history: HistoryStoring,
         presenter: DictationStatePresenting,
         language: @escaping () -> SpeechRecognitionLanguage,
-        successDisplayDuration: Duration = .milliseconds(550)
+        successDisplayDuration: Duration = OverlayTiming.successDisplayDuration
     ) {
         self.recorder = recorder
         self.speech = speech
@@ -93,12 +93,12 @@ final class DictationCoordinator: ObservableObject {
     private func finishRecording() {
         guard processingTask == nil, let target = insertionTarget else { return }
         Self.logger.debug("[Dictation] stop requested")
-        publish(.processing)
         let recognitionLanguage = language()
         processingTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 let audio = try await recorder.stopRecording()
+                publish(.processing)
                 Self.logger.debug("[Speech] transcribing \(audio.samples.count, privacy: .public) frames")
                 let transcript = try await speech.transcribe(audio, language: recognitionLanguage)
                 Self.logger.debug("[Speech] transcription finished")

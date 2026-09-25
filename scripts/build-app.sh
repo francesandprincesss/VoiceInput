@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUTPUT_APP="$ROOT_DIR/dist/VoiceInput.app"
 INFO_PLIST="$ROOT_DIR/Resources/Info.plist"
 ENTITLEMENTS="$ROOT_DIR/Resources/VoiceInput.entitlements"
+APP_ICON="$ROOT_DIR/Resources/AppIcon/VoiceInput.icns"
 EXPECTED_BUNDLE_IDENTIFIER="com.local.voiceinput"
 
 fail() {
@@ -57,6 +58,9 @@ command -v swift >/dev/null 2>&1 || fail "Swift is missing. Install Apple Comman
 command -v codesign >/dev/null 2>&1 || fail "codesign is missing. Install Apple Command Line Tools."
 command -v security >/dev/null 2>&1 || fail "security is missing. Install Apple Command Line Tools."
 
+"$ROOT_DIR/scripts/generate-app-icon.sh"
+[[ -s "$APP_ICON" ]] || fail "Generated app icon is missing: $APP_ICON"
+
 SIGN_IDENTITY="$(select_signing_identity)"
 if [[ "$SIGN_IDENTITY" == "-" ]]; then
     printf '\n' >&2
@@ -87,6 +91,7 @@ STAGE_APP="$STAGE_DIR/VoiceInput.app"
 /bin/mkdir -p "$STAGE_APP/Contents/MacOS" "$STAGE_APP/Contents/Resources"
 /bin/cp "$BIN" "$STAGE_APP/Contents/MacOS/VoiceInput"
 /bin/cp "$INFO_PLIST" "$STAGE_APP/Contents/Info.plist"
+/bin/cp "$APP_ICON" "$STAGE_APP/Contents/Resources/VoiceInput.icns"
 /bin/cp "$ROOT_DIR/THIRD_PARTY_NOTICES.md" "$STAGE_APP/Contents/Resources/"
 /bin/cp "$ROOT_DIR/MODEL_ATTRIBUTION.md" "$STAGE_APP/Contents/Resources/"
 /bin/chmod 755 "$STAGE_APP/Contents/MacOS/VoiceInput"
